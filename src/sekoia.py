@@ -37,10 +37,12 @@ class Sekoia(object):
 
     def run(self):
         self.helper.log_info("Starting SEKOIA.IO connector")
-        cursor = self.generate_first_cursor()
+        state = self.helper.get_state() or {}
+        cursor = state.get("last_cursor", self.generate_first_cursor())
         while True:
             try:
                 cursor = self._run(cursor)
+                self.helper.set_state({"last_cursor": cursor})
             except (KeyboardInterrupt, SystemExit):
                 self.helper.log_info("Connector stop")
                 exit(0)
@@ -96,7 +98,7 @@ class Sekoia(object):
 
         items = self._retrieve_references(items)
         bundle = self.helper.stix2_create_bundle(items)
-        self.helper.send_stix2_bundle(bundle)
+        self.helper.send_stix2_bundle(bundle, update=True)
 
         if len(items) < self.limit:
             # We got the last results
