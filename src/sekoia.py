@@ -1,4 +1,5 @@
 import base64
+import json
 import os
 import time
 from datetime import datetime, timedelta
@@ -24,29 +25,39 @@ class Sekoia(object):
             else {}
         )
         self.helper = OpenCTIConnectorHelper(config)
+
         self._cache = {}
         # Extra config
         self.base_url = self.get_config("base_url", config, "https://api.sekoia.io")
         self.collection = self.get_config(
             "collection", config, "d6092c37-d8d7-45c3-8aff-c4dc26030608"
         )
+
+        self.helper.log_info("Setting up api key")
         self.api_key = self.get_config("api_key", config)
         if not self.api_key:
             self.helper.log_error("API key is Missing")
             raise ValueError("API key is Missing")
 
+        self._load_data_sets()
+
     def run(self):
         self.helper.log_info("Starting SEKOIA.IO connector")
         state = self.helper.get_state() or {}
         cursor = state.get("last_cursor", self.generate_first_cursor())
+        self.helper.log_info(f"Starting with {cursor}")
         while True:
             try:
                 cursor = self._run(cursor)
-                self.helper.set_state({"last_cursor": cursor})
+                self.helper.log_info(f"Cursor updated to {cursor}")
             except (KeyboardInterrupt, SystemExit):
                 self.helper.log_info("Connector stop")
                 exit(0)
             except Exception as ex:
+                # In case of error try to get the last updated cursor
+                # since `_run` updates it after every successful request
+                state = self.helper.get_state() or {}
+                cursor = state.get("last_cursor", cursor)
                 self.helper.log_error(str(ex))
             time.sleep(60)
 
@@ -57,9 +68,7 @@ class Sekoia(object):
         return result or default
 
     def get_collection_url(self):
-        return urljoin(
-            self.base_url, "v2/inthreat/collections", self.collection, "objects"
-        )
+        return urljoin(self.base_url, "v2/inthreat/collections", self.collection, "objects")
 
     def get_object_url(self, ids: Iterable):
         return urljoin(self.base_url, "v2/inthreat/objects", ",".join(ids))
@@ -100,6 +109,7 @@ class Sekoia(object):
         bundle = self.helper.stix2_create_bundle(items)
         self.helper.send_stix2_bundle(bundle, update=True)
 
+        self.helper.set_state({"last_cursor": next_cursor})
         if len(items) < self.limit:
             # We got the last results
             return next_cursor
@@ -107,9 +117,7 @@ class Sekoia(object):
         # More results to fetch
         return self._run(next_cursor)
 
-    def _retrieve_references(
-        self, items: List[Dict], current_depth: int = 0
-    ) -> List[Dict]:
+    def _retrieve_references(self, items: List[Dict], current_depth: int = 0) -> List[Dict]:
         """
         Retrieve the references that appears in the given items.
 
@@ -119,6 +127,7 @@ class Sekoia(object):
             # Safe guard to avoid infinite recursion if an object was not found for example
             return items
 
+        items = self._update_mapped_refs(items)
         to_fetch = self._get_missing_refs(items)
         for ref in list(to_fetch):
             if ref in self._cache:
@@ -131,9 +140,7 @@ class Sekoia(object):
         items += self._retrieve_by_ids(objects_to_fetch, self.get_object_url)
 
         relationships_to_fetch = [i for i in to_fetch if i.startswith("relationship--")]
-        items += self._retrieve_by_ids(
-            relationships_to_fetch, self.get_relationship_url
-        )
+        items += self._retrieve_by_ids(relationships_to_fetch, self.get_relationship_url)
         return self._retrieve_references(items, current_depth + 1)
 
     def _get_missing_refs(self, items: List[Dict]) -> Set:
@@ -152,6 +159,37 @@ class Sekoia(object):
                 refs.add(item["source_ref"])
                 refs.add(item["target_ref"])
         return refs - ids
+
+    def _update_mapped_refs(self, items: List[Dict]):
+        """
+        Update references that are mapped between SEKOIA and OpenCTI.
+
+        This way we will be able to create links with OpenCTI own sectors and locations.
+        """
+        for item in items:
+            if item.get("object_marking_refs"):
+                item["object_marking_refs"] = self._replace_mapped_refs(
+                    item["object_marking_refs"]
+                )
+            if item.get("object_refs"):
+                item["object_refs"] = self._replace_mapped_refs(item["object_refs"])
+            if item.get("source_ref"):
+                item["source_ref"] = self._get_mapped_ref(item["source_ref"])
+            if item.get("target_ref"):
+                item["target_ref"] = self._get_mapped_ref(item["target_ref"])
+        return items
+
+    def _replace_mapped_refs(self, refs: List):
+        for i, ref in enumerate(refs):
+            refs[i] = self._get_mapped_ref(ref)
+        return refs
+
+    def _get_mapped_ref(self, ref: str):
+        if ref in self._geography_mapping:
+            return self._geography_mapping[ref]
+        if ref in self._sectors_mapping:
+            return self._sectors_mapping[ref]
+        return ref
 
     def _retrieve_by_ids(self, ids, url_callback):
         """
@@ -176,9 +214,7 @@ class Sekoia(object):
         """
         Add item to the cache only if it is an identity or a marking definition
         """
-        if item["id"].startswith("marking-definition--") or item["id"].startswith(
-            "identity--"
-        ):
+        if item["id"].startswith("marking-definition--") or item["id"].startswith("identity--"):
             self._cache[item["id"]] = item
 
     def _send_request(self, url, params=None):
@@ -197,6 +233,28 @@ class Sekoia(object):
             else:
                 self.helper.log_error(str(ex))
             return None
+
+    def _load_data_sets(self):
+        # Mapping between SEKOIA sectors/locations and OpenCTI ones
+        self.helper.log_info("Loading locations mapping")
+        with open("./data/geography_mapping.json") as fp:
+            self._geography_mapping = json.load(fp)
+
+        self.helper.log_info("Loading sectors mapping")
+        with open("./data/sectors_mapping.json") as fp:
+            self._sectors_mapping = json.load(fp)
+
+        # Adds OpenCTI sectors/locations to cache
+        self.helper.log_info("Loading OpenCTI sectors")
+        with open("./data/sectors.json") as fp:
+            objects = json.load(fp)["objects"]
+            for sector in objects:
+                self._add_to_cache_if_needed(sector)
+
+        self.helper.log_info("Loading OpenCTI locations")
+        with open("./data/geography.json") as fp:
+            for geography in json.load(fp)["objects"]:
+                self._add_to_cache_if_needed(geography)
 
 
 if __name__ == "__main__":
