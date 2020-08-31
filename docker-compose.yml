@@ -5,7 +5,7 @@ services:
     image: opencti/connector-sekoia
     environment:
       - OPENCTI_URL=http://localhost:8080
-      - OPENCTI_TOKEN=df8635b1-39b5-41c2-8873-2f19b0e6ca8c
+      - OPENCTI_TOKEN=ChangeMe
       - CONNECTOR_ID=ChangeMe
       - CONNECTOR_TYPE=EXTERNAL_IMPORT
       - CONNECTOR_NAME=SEKOIA.IO
