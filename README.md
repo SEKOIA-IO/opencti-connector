@@ -52,7 +52,7 @@ connector-sekoia:
 
 ### Docker compose
 
-Here's a an example of the docker comnpose part that could be added to you main file to add the SEKOIA connector to the stack:
+Here's a an example of the docker compose part that could be added to your main file to add the SEKOIA connector to the stack:
 
 ```yaml
   connector-sekoia:
