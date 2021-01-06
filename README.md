@@ -11,10 +11,19 @@ To install the connector you can follow the official [OpenCTI connectors documen
 
 The docker images of the project can be found at https://github.com/orgs/SEKOIA-IO/packages?tab=packages&q=opencti-connector
 
-To pull an image the following command should be used:
+To pull an image one the following commands should be used:
 
 ```bash
 $ docker pull ghcr.io/sekoia-io/opencti-connector:latest
+$ docker pull ghcr.io/sekoia-io/opencti-connector:4
+```
+
+To use the connector with the old 3.x version of OpenCTI the `3[.x[.x]]` tags must be used when pulling the image:
+
+```bash
+$ docker pull ghcr.io/sekoia-io/opencti-connector:3
+$ docker pull ghcr.io/sekoia-io/opencti-connector:3.3
+$ docker pull ghcr.io/sekoia-io/opencti-connector:3.3.2
 ```
 
 

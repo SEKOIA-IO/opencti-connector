@@ -204,17 +204,19 @@ class Sekoia(object):
             if "items" in res:
                 items.extend(res["items"])
                 for item in res["items"]:
-                    self._add_to_cache_if_needed(item)
+                    self._clean_and_add_to_cache(item)
             if "data" in res:
                 items.append(res["data"])
-                self._add_to_cache_if_needed(res["data"])
+                self._clean_and_add_to_cache(res["data"])
         return items
 
-    def _add_to_cache_if_needed(self, item):
+    def _clean_and_add_to_cache(self, item):
         """
         Add item to the cache only if it is an identity or a marking definition
         """
         if item["id"].startswith("marking-definition--") or item["id"].startswith("identity--"):
+            if item["id"].startswith("marking-definition--"):
+                item.pop("object_marking_refs", None)
             self._cache[item["id"]] = item
 
     def _send_request(self, url, params=None):
@@ -249,12 +251,12 @@ class Sekoia(object):
         with open("./data/sectors.json") as fp:
             objects = json.load(fp)["objects"]
             for sector in objects:
-                self._add_to_cache_if_needed(sector)
+                self._clean_and_add_to_cache(sector)
 
         self.helper.log_info("Loading OpenCTI locations")
         with open("./data/geography.json") as fp:
             for geography in json.load(fp)["objects"]:
-                self._add_to_cache_if_needed(geography)
+                self._clean_and_add_to_cache(geography)
 
 
 if __name__ == "__main__":
