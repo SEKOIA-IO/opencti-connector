@@ -13,8 +13,8 @@ RUN apk --no-cache add git build-base libmagic && \
 # Copy the connector
 COPY src /opt/opencti-connector-sekoia
 
-RUN wget -O /opt/opencti-connector-sekoia/data/sectors.json  https://raw.githubusercontent.com/OpenCTI-Platform/datasets/710893912c30afb93da0b61ce5c397a429920dd1/data/sectors.json && \
-    wget -O /opt/opencti-connector-sekoia/data/geography.json  https://raw.githubusercontent.com/OpenCTI-Platform/datasets/710893912c30afb93da0b61ce5c397a429920dd1/data/geography.json
+RUN wget -O /opt/opencti-connector-sekoia/data/sectors.json  https://raw.githubusercontent.com/OpenCTI-Platform/datasets/master/data/sectors.json && \
+    wget -O /opt/opencti-connector-sekoia/data/geography.json  https://raw.githubusercontent.com/OpenCTI-Platform/datasets/master/data/geography.json
 
 # Expose and entrypoint
 WORKDIR /opt/opencti-connector-sekoia
