@@ -76,6 +76,9 @@ class Sekoia(object):
     def get_relationship_url(self, ids: Iterable):
         return urljoin(self.base_url, "v2/inthreat/relationships", ",".join(ids))
 
+    def get_file_url(self, item_id: str, file_hash: str):
+        return urljoin(self.base_url, "v2/inthreat/objects", item_id, "files", file_hash)
+
     @staticmethod
     def generate_first_cursor() -> str:
         """
@@ -106,6 +109,7 @@ class Sekoia(object):
             return next_cursor
 
         items = self._retrieve_references(items)
+        self._add_files_to_items(items)
         bundle = self.helper.stix2_create_bundle(items)
         self.helper.send_stix2_bundle(bundle, update=True)
 
@@ -219,7 +223,7 @@ class Sekoia(object):
                 item.pop("object_marking_refs", None)
             self._cache[item["id"]] = item
 
-    def _send_request(self, url, params=None):
+    def _send_request(self, url, params=None, binary=False):
         """
         Sends the HTTP request and handle the errors
         """
@@ -227,6 +231,8 @@ class Sekoia(object):
             headers = {"Authorization": f"Bearer {self.api_key}"}
             res = requests.get(url, params=params, headers=headers)
             res.raise_for_status()
+            if binary:
+                return res.content
             return res.json()
         except RequestException as ex:
             if ex.response:
@@ -257,6 +263,23 @@ class Sekoia(object):
         with open("./data/geography.json") as fp:
             for geography in json.load(fp)["objects"]:
                 self._clean_and_add_to_cache(geography)
+
+    def _add_files_to_items(self, items: List[Dict]):
+        for item in items:
+            if not item.get("x_inthreat_uploaded_files"):
+                continue
+            item["x_opencti_files"] = []
+            for file in item.get("x_inthreat_uploaded_files", []):
+                url = self.get_file_url(item["id"], file["sha256"])
+                data = self._send_request(url, binary=True)
+                if data:
+                    item["x_opencti_files"].append(
+                        {
+                            "name": file["file_name"],
+                            "data": base64.b64encode(data).decode("utf-8"),
+                            "mime_type": file.get("mime_type", "text/plain"),
+                        }
+                    )
 
 
 if __name__ == "__main__":
